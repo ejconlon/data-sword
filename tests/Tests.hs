@@ -1,22 +1,22 @@
-{-# LANGUAGE UnicodeSyntax #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE UnicodeSyntax #-}
 {-# OPTIONS_GHC -fno-warn-missing-signatures #-}
 
 import Test.Tasty (defaultMain, localOption, testGroup)
 import Test.Tasty.QuickCheck hiding ((.&.))
 
 import Data.Bits
-import Data.Word
 import Data.Int
-import Data.ShortWord (BinaryWord(..))
+import Data.ShortWord (BinaryWord (..))
+import Data.Word
 import Types
 
 class Iso α τ | τ → α where
-  fromArbitrary ∷ α → τ 
+  fromArbitrary ∷ α → τ
   toArbitrary ∷ τ → α
   isValid ∷ τ → Bool
 
@@ -95,10 +95,10 @@ isoTestGroup name t =
         ]
     ]
 
-toType ∷ Iso α τ ⇒ τ → α → τ 
+toType ∷ Iso α τ ⇒ τ → α → τ
 toType _ = fromArbitrary
 
-fromType ∷ Iso α τ ⇒ τ → τ → α 
+fromType ∷ Iso α τ ⇒ τ → τ → α
 fromType _ = toArbitrary
 
 withUnary ∷ Iso α τ ⇒ τ → (τ → β) → α → β
@@ -158,7 +158,7 @@ prop_signum = propUnary signum signum
 prop_add = propBinary (+) (+)
 prop_sub = propBinary (-) (-)
 prop_mul = propBinary (*) (*)
-prop_fromInteger t i = fromInteger i == fromType t (fromInteger i) 
+prop_fromInteger t i = fromInteger i == fromType t (fromInteger i)
 
 prop_toRational = propUnary' toRational toRational
 

@@ -1,5 +1,5 @@
 Name: data-sword
-Version: 0.2.0.2
+Version: 0.3.0.0
 Category: Data
 Stability: experimental
 Synopsis: Shorter binary words
@@ -20,8 +20,7 @@ License-File: LICENSE
 Extra-Source-Files:
   README.md
 
-Tested-With: GHC==7.8.4, GHC==7.10.3, GHC==8.0.2, GHC==8.2.2, GHC==8.4.4,
-             GHC==8.6.1
+Tested-With: GHC==9.0.2
 
 Cabal-Version: >= 1.10.0
 Build-Type: Simple
@@ -32,10 +31,10 @@ Source-Repository head
 
 Library
   Default-Language: Haskell2010
-  Build-Depends: base >= 4.7 && < 5
-               , template-haskell
-               , hashable >= 1.1
-               , data-bword >= 0.1
+  Build-Depends: base >= 4.15 && < 5
+               , template-haskell >= 2.17 && < 2.18
+               , hashable >= 1.3 && < 1.5
+               , data-bword >= 0.1 && < 0.2
   Hs-Source-Dirs: src
   GHC-Options: -Wall
   Exposed-Modules:
@@ -46,8 +45,8 @@ Test-Suite tests
   Default-Language: Haskell2010
   Type: exitcode-stdio-1.0
   Build-Depends: base
-               , tasty >= 0.8
-               , tasty-quickcheck >= 0.8
+               , tasty >= 1.4 && < 1.5
+               , tasty-quickcheck >= 0.10 && < 0.11
                , data-sword
   Hs-Source-Dirs: tests
   GHC-Options: -Wall

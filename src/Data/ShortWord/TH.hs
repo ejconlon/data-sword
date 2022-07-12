@@ -1,36 +1,31 @@
+{-# LANGUAGE TemplateHaskellQuotes #-}
 {-# LANGUAGE UnicodeSyntax #-}
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE TemplateHaskell #-}
 
 -- | Template Haskell utilities for generating short words declarations
 module Data.ShortWord.TH
   ( mkShortWord
   ) where
 
-import GHC.Arr (Ix(..))
-import GHC.Enum (succError, predError, toEnumError)
-import Data.Data
-import Data.Proxy (Proxy(..))
-import Data.Ratio ((%))
-import Data.Bits (Bits(..))
-import Data.Bits (FiniteBits(..))
-#if MIN_VERSION_hashable(1,2,0)
-import Data.Hashable (Hashable(..), hashWithSalt)
-#else
-import Data.Hashable (Hashable(..), combine)
-#endif
+import Data.BinaryWord (BinaryWord (..))
+import Data.Bits (Bits (..), FiniteBits (..))
 import Data.Char (toLower)
+import Data.Data (ConstrRep (..), Data (..), DataType, Proxy (..), Typeable, constrRep, mkIntType, mkIntegralConstr)
+import Data.Hashable (Hashable (..), hashWithSalt)
 import Data.List (union)
-import Control.Applicative ((<$>), (<*>))
-import Language.Haskell.TH
-import Language.Haskell.TH.Syntax (Module(..), ModName(..))
-import Data.BinaryWord (BinaryWord(..))
+import Data.Ratio ((%))
+import GHC.Arr (Ix (..))
+import GHC.Enum (predError, succError, toEnumError)
+import Language.Haskell.TH (Bang (..), Body (..), Clause (..), Con (..), Dec (..), DerivClause (..), Exp (..),
+                            Inline (..), Lit (..), Match (..), Name, Pat (..), Phases (..), Pragma (..), Q,
+                            RuleMatch (..), SourceStrictness (..), SourceUnpackedness (..), TySynEqn (..), Type (..),
+                            mkName, thisModule)
+import Language.Haskell.TH.Syntax (ModName (..), Module (..))
 
 -- | Declare signed and unsigned binary word types that use a subset
 --   of the bits of the specified underlying type. For each data type
 --   the following instances are declared: 'Typeable', 'Data', 'Eq', 'Ord',
 --   'Bounded', 'Enum', 'Num', 'Real', 'Integral', 'Show', 'Read',
---   'Hashable', 'Ix', 'Bits', 'BinaryWord'.
+--   'Hashable', 'Ix', 'Bits', 'FiniteBits', 'BinaryWord'.
 mkShortWord ∷ String -- ^ Unsigned variant type name
             → String -- ^ Unsigned variant constructor name
             → String -- ^ Unsigned variant proxy name
@@ -59,25 +54,16 @@ mkShortWord' ∷ Bool
              → Int
              → [Name]
              → Q [Dec]
-mkShortWord' signed tp cn pn otp ocn utp bl ad = returnDecls $
+mkShortWord' signed tp cn pn otp ocn utp bl ad = returnDecls
     [ NewtypeD [] tp []
-#if MIN_VERSION_template_haskell(2,11,0)
                Nothing
                (NormalC cn [(Bang NoSourceUnpackedness
                                   NoSourceStrictness,
                              uT)])
-# if MIN_VERSION_template_haskell(2,12,0)
                [DerivClause Nothing (ConT <$> union [''Typeable] ad)]
-# else
-               (ConT <$> union [''Typeable] ad)
-# endif
-#else
-               (NormalC cn [(NotStrict, uT)])
-               (union [''Typeable] ad)
-#endif
     , SigD pn (AppT (ConT ''Proxy) tpT)
     , fun pn $ ConE 'Proxy
-    , inst ''Eq [tp] $
+    , inst ''Eq [tp]
         {- (W x) == (W y) = x == y -}
         [ funUn2 '(==) $ appVN '(==) [x, y]
         , inline '(==) ]
@@ -129,8 +115,8 @@ mkShortWord' signed tp cn pn otp ocn utp bl ad = returnDecls $
                                ])
                    (appV 'toEnumError [ litS (show tp)
                                       , VarE x
-                                      , TupE [ SigE (VarE 'minBound) tpT
-                                             , SigE (VarE 'maxBound) tpT
+                                      , TupE [ Just (SigE (VarE 'minBound) tpT)
+                                             , Just (SigE (VarE 'maxBound) tpT)
                                              ]
                                       ])
                    (appW $ appV 'shiftL [VarE y, shiftE]))
@@ -141,9 +127,9 @@ mkShortWord' signed tp cn pn otp ocn utp bl ad = returnDecls $
         {- enumFrom x = enumFromTo x maxBound -}
         , funX 'enumFrom $ appVN 'enumFromTo [x, 'maxBound]
         , inline 'enumFrom
-        {- 
+        {-
           enumFromThen x y =
-            enumFromThenTo x y $ if y >= x then maxBound else minBound 
+            enumFromThenTo x y $ if y >= x then maxBound else minBound
         -}
         , funXY 'enumFromThen $
             appV 'enumFromThenTo
@@ -160,7 +146,7 @@ mkShortWord' signed tp cn pn otp ocn utp bl ad = returnDecls $
             where down to c = next : if next == to then [] else down to next
                     where next = c - 1
                   up to c = next : if next == to then [] else up to next
-                    where next = c + 1 
+                    where next = c + 1
         -}
         , FunD 'enumFromTo $ return $
             Clause
@@ -202,14 +188,14 @@ mkShortWord' signed tp cn pn otp ocn utp bl ad = returnDecls $
                           (NormalB $ appVN '(+) [c, 'lsb]) []]
               ]
         {-
-          enumFromThenTo x y z = case y `compare` x of 
+          enumFromThenTo x y z = case y `compare` x of
               LT → if z > x then [] else down (x - y) z x
               EQ → repeat x
               GT → if z < x then [] else up (y - x) z x
             where down s to c = c : if next < to then [] else down s to next
                     where next = c - s
                   up s to c = c : if next > to then [] else up s to next
-                    where next = c + s 
+                    where next = c + s
         -}
         , FunD 'enumFromThenTo $ return $
             Clause [VarP x, VarP y, VarP z]
@@ -253,9 +239,9 @@ mkShortWord' signed tp cn pn otp ocn utp bl ad = returnDecls $
         {- negate (W x) = W (negate x) -}
         [ funUn 'negate $ appW $ appVN 'negate [x]
         , inline 'negate
-        {- 
+        {-
           abs x@(W y) = if SIGNED
-                        then if y < 0 then W (negate y) else x 
+                        then if y < 0 then W (negate y) else x
                         else x
         -}
         , if signed
@@ -283,7 +269,7 @@ mkShortWord' signed tp cn pn otp ocn utp bl ad = returnDecls $
         {- toRational x = toInteger x % 1 -}
         [ funX 'toRational $ appV '(%) [appVN 'toInteger [x], litI 1]
         , inline 'toRational ]
-    , inst ''Integral [tp] $
+    , inst ''Integral [tp]
         {- toInteger (W x) = toInteger (shiftR x SHIFT) -}
         [ funUn 'toInteger $ appV 'toInteger [appV 'shiftR [VarE x, shiftE]]
         , inline 'toInteger
@@ -292,7 +278,7 @@ mkShortWord' signed tp cn pn otp ocn utp bl ad = returnDecls $
              where (q, r) = quotRem x y
         -}
         , funUn2' 'quotRem
-            (TupE [appW (appV 'shiftL [VarE q, shiftE]), appWN r])
+            (TupE [Just (appW (appV 'shiftL [VarE q, shiftE])), Just (appWN r)])
             [vals [q, r] $ appVN 'quotRem [x, y]]
         , inline 'quotRem
         {-
@@ -300,7 +286,7 @@ mkShortWord' signed tp cn pn otp ocn utp bl ad = returnDecls $
              where (q, r) = divMod x y
         -}
         , funUn2' 'divMod
-            (TupE [appW (appV 'shiftL [VarE q, shiftE]), appWN r])
+            (TupE [Just (appW (appV 'shiftL [VarE q, shiftE])), Just (appWN r)])
             [vals [q, r] $ appVN 'divMod [x, y]]
         , inline 'divMod
         ]
@@ -315,18 +301,12 @@ mkShortWord' signed tp cn pn otp ocn utp bl ad = returnDecls $
         -}
         [ funXY 'readsPrec $
             appV 'fmap [ LamE [TupP [VarP q, VarP r]]
-                              (TupE [appVN 'fromInteger [q], VarE r])
+                              (TupE [Just (appVN 'fromInteger [q]), Just (VarE r)])
                        , appVN 'readsPrec [x, y] ]
         ]
     , inst ''Hashable [tp]
-#if MIN_VERSION_hashable(1,2,0)
         {- hashWithSalt x (W y) = x `hashWithSalt` y -}
         [ funXUn 'hashWithSalt $ appVN 'hashWithSalt [x, y]
-#else
-        {- hash (W x) = hash x -}
-        [ funUn 'hash $ appVN 'hash [x]
-        , inline 'hash
-#endif
         , inline 'hashWithSalt ]
     , inst ''Ix [tp]
         {- range (x, y) = enumFromTo x y -}
@@ -340,9 +320,9 @@ mkShortWord' signed tp cn pn otp ocn utp bl ad = returnDecls $
         , funTupZ 'inRange $
             appV '(&&) [appVN '(>=) [z, x], appVN '(<=) [z, y]]
         , inline 'inRange ]
-    , inst ''Bits [tp] $
+    , inst ''Bits [tp]
         {- bitSize _ = SIZE -}
-        [ fun_ 'bitSize $ sizeE
+        [ fun_ 'bitSize sizeE
         , inline 'bitSize
         {- bitSizeMaybe _ = Just SIZE -}
         , fun_ 'bitSizeMaybe $ app (ConE 'Just) [sizeE]
@@ -381,7 +361,7 @@ mkShortWord' signed tp cn pn otp ocn utp bl ad = returnDecls $
                    MASK))
         -}
         , funUnY 'rotateL $ appW $ appV '(.|.) $ (appVN 'shiftL [x, y] :) $
-            return $ appV '(.&.) $
+            return $ appV '(.&.)
               [ if signed
                 then appV 'signedWord [ appV 'shiftR
                                              [ appVN 'unsignedWord [x]
@@ -419,26 +399,22 @@ mkShortWord' signed tp cn pn otp ocn utp bl ad = returnDecls $
         ]
     , inst ''FiniteBits [tp]
         {- finiteBitSize _ = SIZE -}
-        [ fun_ 'finiteBitSize $ sizeE
+        [ fun_ 'finiteBitSize sizeE
         , inline 'finiteBitSize
-# if MIN_VERSION_base(4,8,0)
         {- countLeadingZeros = leadingZeroes -}
         , fun 'countLeadingZeros $ VarE 'leadingZeroes
         , inline 'countLeadingZeros
         {- countTrailingZeros = trailingZeroes -}
         , fun 'countTrailingZeros $ VarE 'trailingZeroes
         , inline 'countTrailingZeros
-# endif
         ]
     , inst ''BinaryWord [tp]
-        [ tySynInst ''UnsignedWord [tpT] $
-            ConT $ if signed then otp else tp
-        , tySynInst ''SignedWord [tpT] $
-            ConT $ if signed then tp else otp
+        [ tySynInst (AppT (ConT ''UnsignedWord) tpT) (ConT (if signed then otp else tp))
+        , tySynInst (AppT (ConT ''SignedWord) tpT) (ConT (if signed then tp else otp))
         {-
           UNSIGNED:
             unsignedWord = id
-          
+
           SIGNED:
             unsignedWord (W x) = U (unsignedWord x)
         -}
@@ -449,7 +425,7 @@ mkShortWord' signed tp cn pn otp ocn utp bl ad = returnDecls $
         {-
           UNSIGNED:
             signedWord (W x) = S (signedWord hi)
-          
+
           SIGNED:
             signedWord = id
         -}
@@ -463,8 +439,8 @@ mkShortWord' signed tp cn pn otp ocn utp bl ad = returnDecls $
             where (t1, t2) = unwrappedAdd x y
         -}
         , funUn2' 'unwrappedAdd
-            (TupE [ appW (appV 'shiftL [VarE t1, shiftE])
-                  , appC (if signed then ocn else cn)
+            (TupE [ Just (appW (appV 'shiftL [VarE t1, shiftE]))
+                  , Just $ appC (if signed then ocn else cn)
                          [appVN 'unsignedWord [t2]]
                   ])
             [vals [t1, t2] $ appVN 'unwrappedAdd [x, y]]
@@ -475,8 +451,8 @@ mkShortWord' signed tp cn pn otp ocn utp bl ad = returnDecls $
             where (t1, t2) = unwrappedMul (shiftR x SHIFT) y
         -}
         , funUn2' 'unwrappedMul
-            (TupE [ appW (appV 'shiftL [VarE t1, shiftE])
-                  , appC (if signed then ocn else cn)
+            (TupE [ Just (appW (appV 'shiftL [VarE t1, shiftE]))
+                  , Just $ appC (if signed then ocn else cn)
                          [appVN 'unsignedWord [t2]]
                   ])
             [vals [t1, t2] $
@@ -558,17 +534,8 @@ mkShortWord' signed tp cn pn otp ocn utp bl ad = returnDecls $
     uT   | signed    = AppT (ConT ''SignedWord) (ConT utp)
          | otherwise = AppT (ConT ''UnsignedWord) (ConT utp)
     tpT  = ConT tp
-    tySynInst n ps t =
-#if MIN_VERSION_template_haskell(2,9,0)
-      TySynInstD n (TySynEqn ps t)
-#else
-      TySynInstD n ps t
-#endif
-    inst cls params = InstanceD 
-#if MIN_VERSION_template_haskell(2,11,0)
-                                Nothing
-#endif
-                                [] (foldl AppT (ConT cls) (ConT <$> params))
+    tySynInst lhs rhs = TySynInstD (TySynEqn Nothing lhs rhs)
+    inst cls params = InstanceD Nothing [] (foldl AppT (ConT cls) (ConT <$> params))
     fun n e        = FunD n [Clause [] (NormalB e) []]
     fun_ n e       = FunD n [Clause [WildP] (NormalB e) []]
     funUn' n e ds  =
@@ -598,10 +565,10 @@ mkShortWord' signed tp cn pn otp ocn utp bl ad = returnDecls $
     fun_ZC n e     = FunD n [Clause [WildP, VarP z, VarP c] (NormalB e) []]
     inline n = PragmaD $ InlineP n Inline FunLike AllPhases
     inlinable n = PragmaD $ InlineP n Inlinable FunLike AllPhases
-    rule n m e = PragmaD $ RuleP n [] m e AllPhases
+    rule n m e = PragmaD $ RuleP n Nothing [] m e AllPhases
     val n e   = ValD (VarP n) (NormalB e) []
     vals ns e = ValD (TupP (VarP <$> ns)) (NormalB e) []
-    app f   = foldl AppE f
+    app = foldl AppE
     appN f  = app f . fmap VarE
     appV f  = app (VarE f)
     appC f  = app (ConE f)
@@ -622,12 +589,12 @@ mkShortWord' signed tp cn pn otp ocn utp bl ad = returnDecls $
             where uncapitalize (h : t) = toLower h : t
                   uncapitalize []      = []
           fullName = modName ++ "." ++ show tp
-      return $ (ds ++) $
+      return $ ds ++
         {- TYPEType ∷ DataType -}
         [ SigD typeVar (ConT ''DataType)
         {- TYPEType = mkIntType TYPE -}
         , fun typeVar $ appV 'mkIntType [litS fullName]
-        , inst ''Data [tp] $
+        , inst ''Data [tp]
             {- toConstr = mkIntegralConstr TYPE -}
             [ fun 'toConstr $ appVN 'mkIntegralConstr [typeVar]
             {-
@@ -637,7 +604,7 @@ mkShortWord' signed tp cn pn otp ocn utp bl ad = returnDecls $
                                              show c ++ " is not of type " ++
                                              fullName
             -}
-            , fun_ZC 'gunfold $ CaseE (appVN 'constrRep [c]) $
+            , fun_ZC 'gunfold $ CaseE (appVN 'constrRep [c])
                 [ Match (ConP 'IntConstr [VarP x])
                         (NormalB $ appV z [appVN 'fromIntegral [x]])
                         []
