@@ -10,6 +10,7 @@ import Data.BinaryWord (BinaryWord (..))
 import Data.Bits (Bits (..), FiniteBits (..))
 import Data.Char (toLower)
 import Data.Data (ConstrRep (..), Data (..), DataType, Proxy (..), Typeable, constrRep, mkIntType, mkIntegralConstr)
+import Data.Default (Default (..))
 import Data.Hashable (Hashable (..), hashWithSalt)
 import Data.List (union)
 import Data.Ratio ((%))
@@ -25,7 +26,7 @@ import Language.Haskell.TH.Syntax (ModName (..), Module (..))
 --   of the bits of the specified underlying type. For each data type
 --   the following instances are declared: 'Typeable', 'Data', 'Eq', 'Ord',
 --   'Bounded', 'Enum', 'Num', 'Real', 'Integral', 'Show', 'Read',
---   'Hashable', 'Ix', 'Bits', 'FiniteBits', 'BinaryWord'.
+--   'Hashable', 'Ix', 'Bits', 'FiniteBits', 'BinaryWord', 'Default'.
 mkShortWord ∷ String -- ^ Unsigned variant type name
             → String -- ^ Unsigned variant constructor name
             → String -- ^ Unsigned variant proxy name
@@ -407,6 +408,11 @@ mkShortWord' signed tp cn pn otp ocn utp bl ad = returnDecls
         {- countTrailingZeros = trailingZeroes -}
         , fun 'countTrailingZeros $ VarE 'trailingZeroes
         , inline 'countTrailingZeros
+        ]
+    , inst ''Default [tp]
+        {- def = 0 -}
+        [ fun 'def (LitE (IntegerL 0))
+        , inline 'def
         ]
     , inst ''BinaryWord [tp]
         [ tySynInst (AppT (ConT ''UnsignedWord) tpT) (ConT (if signed then otp else tp))
